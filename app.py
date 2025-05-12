@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import requests
 import time
-from openai import OpenAI  # Import main client
+from openai import OpenAI
 
 # Load secrets
 GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
@@ -12,38 +12,45 @@ OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 TAG_COLUMNS = ["HIGH PRIORITY", "NEW JOB", "FAMILY EXPANSION", "LANGUAGE: SPANISH", "CONFIDENCE: LOW"]
+MAX_QUERIES = 90  # Stay under Google's 100 free queries/day
+query_count = 0
+
+def build_query(full_name, state):
+    return f'"{full_name}" {state} ("joined" OR "promoted" OR "baby" OR "passed away" OR "married") site:linkedin.com OR site:legacy.com OR site:news.ycombinator.com OR site:crunchbase.com'
 
 def search_google(query):
+    global query_count
+    if query_count >= MAX_QUERIES:
+        return ["Search limit reached. No further queries sent to Google."]
     try:
         url = f"https://www.googleapis.com/customsearch/v1?q={query}&key={GOOGLE_API_KEY}&cx={SEARCH_ENGINE_ID}"
         response = requests.get(url, timeout=10)
         response.raise_for_status()
         items = response.json().get("items", [])
+        query_count += 1
         return [item.get("snippet", "") for item in items]
     except Exception as e:
         st.warning(f"Google Search error for '{query}': {e}")
         return []
 
 def gpt_extract(full_name, snippets):
-    if not snippets:
-        return None
     text = "\n".join(snippets)
     prompt = f"""
-You are assisting a financial advisor. A client named {full_name} appears in the following public data:
+You are a research assistant for a financial advisor. Below is public data found online about a client named {full_name}:
 
 {text}
 
-Tasks:
-1. List any life events (birth, death, marriage, move), job changes, or languages spoken.
-2. Assign a confidence level: High / Medium / Low.
-3. Return tags from: HIGH PRIORITY, NEW JOB, FAMILY EXPANSION, LANGUAGE: SPANISH, CONFIDENCE: LOW.
-4. Write a warm outreach email referencing any key updates found.
+Your tasks:
+1. Identify any life events: marriage, birth, death, relocation, or new city.
+2. Identify any job events: new job, title change, company switch, promotion.
+3. If relevant, guess languages spoken (if mentioned directly or implied).
+4. Assign a confidence level (High, Medium, Low) based on the strength of the mentions.
 
-Respond in this format literally:
-Summary: ...
-Tags: [TAG1, TAG2, ...]
-Confidence: ...
-Email: ...
+Return this format:
+Summary: (1–2 sentence digest)
+Tags: [HIGH PRIORITY, NEW JOB, FAMILY EXPANSION, LANGUAGE: SPANISH, CONFIDENCE: LOW]
+Confidence: (High / Medium / Low)
+Email: (personalized warm outreach)
 """
     try:
         response = client.chat.completions.create(
@@ -53,26 +60,21 @@ Email: ...
         )
         return response.choices[0].message.content
     except Exception as e:
-        st.warning(f"OpenAI API error for '{full_name}': {e}")
-        return ("Summary: N/A\n"
-                "Tags: []\n"
-                "Confidence: Low\n"
-                "Email: N/A")
+        st.warning(f"OpenAI error for {full_name}: {e}")
+        return "Summary: No major updates detected recently.\nTags: []\nConfidence: Low\nEmail: Hi, just checking in—let me know if anything new is happening on your end!"
 
 def parse_response(result):
     summary = "N/A"
     tags = []
     confidence = "Low"
     email = "N/A"
-    if not result:
-        return summary, tags, confidence, email
     try:
         for line in result.split("\n"):
             if line.startswith("Summary:"):
                 summary = line.replace("Summary:", "").strip()
             elif line.startswith("Tags:"):
-                tags_part = line.replace("Tags:", "").strip().strip("[]")
-                tags = [t.strip() for t in tags_part.split(",") if t.strip()]
+                tags_line = line.replace("Tags:", "").strip().strip("[]")
+                tags = [t.strip() for t in tags_line.split(",") if t.strip()]
             elif line.startswith("Confidence:"):
                 confidence = line.replace("Confidence:", "").strip()
             elif line.startswith("Email:"):
@@ -81,7 +83,7 @@ def parse_response(result):
         st.warning(f"Parsing error: {e}")
     return summary, tags, confidence, email
 
-st.title("Client Intelligence Extractor")
+st.title("Free Client Insight Extractor")
 uploaded_file = st.file_uploader("Upload Excel File", type=["xlsx"])
 
 if uploaded_file:
@@ -92,9 +94,9 @@ if uploaded_file:
     tag_data = {tag: [] for tag in TAG_COLUMNS}
 
     for _, row in df.iterrows():
-        query = f'"{row["Full Name"]}" {row["State"]}'
+        query = build_query(row["Full Name"], row["State"])
         snippets = search_google(query)
-        time.sleep(1)
+        time.sleep(1)  # stay under rate limits
 
         raw = "\n".join(snippets) if snippets else "No data"
         raw_list.append(raw)
@@ -114,6 +116,6 @@ if uploaded_file:
     for tag in TAG_COLUMNS:
         output[tag] = tag_data[tag]
 
-    st.success("Enrichment complete.")
+    st.success("✅ Enrichment complete.")
     st.dataframe(output)
-    st.download_button("Download enriched data as CSV", output.to_csv(index=False), "enriched_clients.csv")
+    st.download_button("📥 Download CSV", output.to_csv(index=False), "enriched_clients.csv")
