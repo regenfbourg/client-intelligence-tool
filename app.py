@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import requests
+import time
 from openai import OpenAI
 
 GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
@@ -65,6 +66,8 @@ if uploaded_file:
     for _, row in df.iterrows():
         query = f'"{row["Full Name"]}" {row["State"]}'
         snippets = search_google(query)
+        time.sleep(2)  # Add 2-second delay between requests
+
         if not snippets:
             raw_data.append("No data found")
             digests.append("N/A")
