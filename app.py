@@ -2,8 +2,7 @@ import streamlit as st
 import pandas as pd
 import requests
 import time
-from openai import OpenAI
-from openai.error import OpenAIError
+from openai import OpenAI  # Import main client
 
 # Load secrets
 GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
@@ -53,23 +52,20 @@ Email: ...
             temperature=0.5
         )
         return response.choices[0].message.content
-    except OpenAIError as e:
+    except Exception as e:
         st.warning(f"OpenAI API error for '{full_name}': {e}")
-        # Return a default structured string
         return ("Summary: N/A\n"
                 "Tags: []\n"
                 "Confidence: Low\n"
                 "Email: N/A")
 
 def parse_response(result):
-    # Initialize defaults
     summary = "N/A"
     tags = []
     confidence = "Low"
     email = "N/A"
     if not result:
         return summary, tags, confidence, email
-    # Parse structured response
     try:
         for line in result.split("\n"):
             if line.startswith("Summary:"):
@@ -91,16 +87,14 @@ uploaded_file = st.file_uploader("Upload Excel File", type=["xlsx"])
 if uploaded_file:
     df = pd.read_excel(uploaded_file)
     df["Full Name"] = df["First Name"].fillna("") + " " + df["Last Name"].fillna("")
-    # Prepare output columns
     output = df.copy()
-    # Raw, Digest, Email and tag columns
     raw_list, summary_list, email_list = [], [], []
     tag_data = {tag: [] for tag in TAG_COLUMNS}
 
     for _, row in df.iterrows():
         query = f'"{row["Full Name"]}" {row["State"]}'
         snippets = search_google(query)
-        time.sleep(1)  # rate control
+        time.sleep(1)
 
         raw = "\n".join(snippets) if snippets else "No data"
         raw_list.append(raw)
@@ -108,15 +102,12 @@ if uploaded_file:
         result = gpt_extract(row["Full Name"], snippets)
         summary, tags, confidence, email = parse_response(result)
 
-        # Append summary and email
         summary_list.append(f"{summary} (Confidence: {confidence})")
         email_list.append(email)
 
-        # Tag columns
         for tag in TAG_COLUMNS:
             tag_data[tag].append(tag in tags or (tag == "CONFIDENCE: LOW" and confidence.lower() == "low"))
 
-    # Combine into output DataFrame
     output["Raw Data Found"] = raw_list
     output["Digested Summary"] = summary_list
     output["Custom Email Template"] = email_list
