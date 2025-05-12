@@ -11,26 +11,35 @@ OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-TAG_COLUMNS = ["HIGH PRIORITY", "NEW JOB", "FAMILY EXPANSION", "LANGUAGE: SPANISH", "CONFIDENCE: LOW"]
-MAX_QUERIES = 90  # Stay under Google's 100 free queries/day
+TAG_COLUMNS = ["HIGH PRIORITY", "NEW JOB", "FAMILY EXPANSION", "MOVED", "CONFIDENCE: LOW"]
+MAX_QUERIES = 90
 query_count = 0
 
 def build_query(full_name, state):
-    return f'"{full_name}" {state} ("joined" OR "promoted" OR "baby" OR "passed away" OR "married") site:linkedin.com OR site:legacy.com OR site:news.ycombinator.com OR site:crunchbase.com'
+    base = f'"{full_name}" {state}'
+    life_signals = (
+        '"joined" OR "promoted" OR "baby" OR "welcomed a baby" OR "passed away" OR '
+        '"got married" OR "wedding" OR "moved to" OR "bought a home"'
+    )
+    trusted_sites = (
+        "site:linkedin.com/in OR site:legacy.com OR site:tributearchive.com OR "
+        "site:theknot.com OR site:zola.com OR site:babylist.com OR site:zillow.com OR site:redfin.com"
+    )
+    return f'{base} ({life_signals}) {trusted_sites}'
 
 def search_google(query):
     global query_count
     if query_count >= MAX_QUERIES:
-        return ["Search limit reached. No further queries sent to Google."]
+        return ["Search limit reached. No further queries sent."]
     try:
         url = f"https://www.googleapis.com/customsearch/v1?q={query}&key={GOOGLE_API_KEY}&cx={SEARCH_ENGINE_ID}"
         response = requests.get(url, timeout=10)
         response.raise_for_status()
-        items = response.json().get("items", [])
         query_count += 1
+        items = response.json().get("items", [])
         return [item.get("snippet", "") for item in items]
     except Exception as e:
-        st.warning(f"Google Search error for '{query}': {e}")
+        st.warning(f"Google Search error: {e}")
         return []
 
 def gpt_extract(full_name, snippets):
@@ -41,16 +50,16 @@ You are a research assistant for a financial advisor. Below is public data found
 {text}
 
 Your tasks:
-1. Identify any life events: marriage, birth, death, relocation, or new city.
-2. Identify any job events: new job, title change, company switch, promotion.
-3. If relevant, guess languages spoken (if mentioned directly or implied).
-4. Assign a confidence level (High, Medium, Low) based on the strength of the mentions.
+1. Identify life events: marriage, birth, death, move/new home.
+2. Identify any job events: job changes, promotions.
+3. Guess spoken languages if relevant.
+4. Assign a confidence level (High / Medium / Low).
 
 Return this format:
-Summary: (1–2 sentence digest)
-Tags: [HIGH PRIORITY, NEW JOB, FAMILY EXPANSION, LANGUAGE: SPANISH, CONFIDENCE: LOW]
-Confidence: (High / Medium / Low)
-Email: (personalized warm outreach)
+Summary: ...
+Tags: [HIGH PRIORITY, NEW JOB, FAMILY EXPANSION, MOVED, CONFIDENCE: LOW]
+Confidence: ...
+Email: ...
 """
     try:
         response = client.chat.completions.create(
@@ -61,7 +70,7 @@ Email: (personalized warm outreach)
         return response.choices[0].message.content
     except Exception as e:
         st.warning(f"OpenAI error for {full_name}: {e}")
-        return "Summary: No major updates detected recently.\nTags: []\nConfidence: Low\nEmail: Hi, just checking in—let me know if anything new is happening on your end!"
+        return "Summary: No major updates.\nTags: []\nConfidence: Low\nEmail: Just checking in!"
 
 def parse_response(result):
     summary = "N/A"
@@ -83,7 +92,7 @@ def parse_response(result):
         st.warning(f"Parsing error: {e}")
     return summary, tags, confidence, email
 
-st.title("Free Client Insight Extractor")
+st.title("Expanded Life Event Insight Extractor")
 uploaded_file = st.file_uploader("Upload Excel File", type=["xlsx"])
 
 if uploaded_file:
@@ -96,7 +105,7 @@ if uploaded_file:
     for _, row in df.iterrows():
         query = build_query(row["Full Name"], row["State"])
         snippets = search_google(query)
-        time.sleep(1)  # stay under rate limits
+        time.sleep(1)
 
         raw = "\n".join(snippets) if snippets else "No data"
         raw_list.append(raw)
@@ -116,6 +125,6 @@ if uploaded_file:
     for tag in TAG_COLUMNS:
         output[tag] = tag_data[tag]
 
-    st.success("✅ Enrichment complete.")
+    st.success("✅ Expanded enrichment complete.")
     st.dataframe(output)
-    st.download_button("📥 Download CSV", output.to_csv(index=False), "enriched_clients.csv")
+    st.download_button("📥 Download CSV", output.to_csv(index=False), "enriched_clients_life_events.csv")
