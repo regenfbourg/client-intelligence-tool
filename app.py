@@ -1,12 +1,13 @@
 import streamlit as st
 import pandas as pd
 import requests
-import openai
+from openai import OpenAI
 
 GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
 SEARCH_ENGINE_ID = st.secrets["SEARCH_ENGINE_ID"]
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
-openai.api_key = OPENAI_API_KEY
+
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 TAG_COLUMNS = ["HIGH PRIORITY", "NEW JOB", "FAMILY EXPANSION", "LANGUAGE: SPANISH", "CONFIDENCE: LOW"]
 
@@ -36,12 +37,12 @@ Respond in this format:
 - Confidence: ...
 - Email: ...
 """
-    response = openai.ChatCompletion.create(
+    response = client.chat.completions.create(
         model="gpt-4",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.5
     )
-    return response.choices[0].message["content"]
+    return response.choices[0].message.content
 
 def parse_tags(text):
     tag_dict = {tag: False for tag in TAG_COLUMNS}

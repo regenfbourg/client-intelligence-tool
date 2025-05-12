@@ -1,5 +1,5 @@
 pandas
 streamlit
-openai
 requests
 openpyxl
+openai>=1.0.0
