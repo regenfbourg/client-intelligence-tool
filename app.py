@@ -11,21 +11,24 @@ OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-TAG_COLUMNS = ["HIGH PRIORITY", "NEW JOB", "FAMILY EXPANSION", "MOVED", "CONFIDENCE: LOW"]
+TAG_COLUMNS = ["HIGH PRIORITY", "NEW JOB", "FAMILY EXPANSION", "MOVED", "LANGUAGE: SPANISH", "CONFIDENCE: LOW"]
 MAX_QUERIES = 90
 query_count = 0
 
 def build_query(full_name, state):
     base = f'"{full_name}" {state}'
-    life_signals = (
-        '"joined" OR "promoted" OR "baby" OR "welcomed a baby" OR "passed away" OR '
-        '"got married" OR "wedding" OR "moved to" OR "bought a home"'
+    enriched_keywords = (
+        '"joined" OR "promoted" OR "hired" OR "now at" OR "currently at" OR "recently started" OR "new position" OR "new role" OR "baby" OR "welcomed a baby" OR '
+        '"passed away" OR "obituary" OR "married" OR "wedding" OR "moved to" OR "bought a home" OR '
+        '"relocated" OR "speaks Spanish" OR "conference speaker" OR "panelist" OR "honored" OR "featured"'
     )
-    trusted_sites = (
-        "site:linkedin.com/in OR site:legacy.com OR site:tributearchive.com OR "
-        "site:theknot.com OR site:zola.com OR site:babylist.com OR site:zillow.com OR site:redfin.com"
+    enriched_sites = (
+        "site:linkedin.com/in OR site:linkedin.com/pub OR site:linkedin.com/company OR site:legacy.com OR site:tributearchive.com OR "
+        "site:theknot.com OR site:zola.com OR site:babylist.com OR site:zillow.com OR site:redfin.com OR "
+        "site:news.ycombinator.com OR site:techcrunch.com OR site:medium.com OR site:substack.com OR "
+        "site:conference-board.org OR site:eventbrite.com OR site:forbes.com OR site:bloomberg.com"
     )
-    return f'{base} ({life_signals}) {trusted_sites}'
+    return f'{base} ({enriched_keywords}) {enriched_sites}'
 
 def search_google(query):
     global query_count
@@ -50,14 +53,15 @@ You are a research assistant for a financial advisor. Below is public data found
 {text}
 
 Your tasks:
-1. Identify life events: marriage, birth, death, move/new home.
-2. Identify any job events: job changes, promotions.
-3. Guess spoken languages if relevant.
+1. Identify life events: marriage, birth, death, move, home purchase.
+2. Identify professional events: promotions, new jobs, speaking engagements, media features.
+3. Identify languages spoken.
 4. Assign a confidence level (High / Medium / Low).
+5. Tag the person from: HIGH PRIORITY, NEW JOB, FAMILY EXPANSION, MOVED, LANGUAGE: SPANISH, CONFIDENCE: LOW.
 
 Return this format:
 Summary: ...
-Tags: [HIGH PRIORITY, NEW JOB, FAMILY EXPANSION, MOVED, CONFIDENCE: LOW]
+Tags: [ ... ]
 Confidence: ...
 Email: ...
 """
@@ -92,7 +96,7 @@ def parse_response(result):
         st.warning(f"Parsing error: {e}")
     return summary, tags, confidence, email
 
-st.title("Expanded Life Event Insight Extractor")
+st.title("Full-Scope Life & Career Insight Extractor")
 uploaded_file = st.file_uploader("Upload Excel File", type=["xlsx"])
 
 if uploaded_file:
@@ -127,4 +131,4 @@ if uploaded_file:
 
     st.success("✅ Expanded enrichment complete.")
     st.dataframe(output)
-    st.download_button("📥 Download CSV", output.to_csv(index=False), "enriched_clients_life_events.csv")
+    st.download_button("📥 Download CSV", output.to_csv(index=False), "full_enriched_clients.csv")
